@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Huly JSON Export Normalizer</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.5/xlsx.full.min.js"></script>
+
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+        line-height: 1.6;
+        color: #333;
+      }
+      h1 {
+        color: #2c3e50;
+        text-align: center;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 10px;
+      }
+      form {
+        background-color: #f9f9f9;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+      label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: bold;
+      }
+      input[type="file"] {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      button {
+        display: block;
+        width: 100%;
+        padding: 10px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+        margin-bottom: 15px;
+      }
+      /* button:hover {
+        background-color: #2980b9;
+      } */
+      .properties-container {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .properties-list {
+        flex: 1;
+        border: 1px solid #ddd;
+        min-height: 200px;
+        padding: 10px;
+        background-color: white;
+      }
+      .property-item {
+        background-color: #f4f4f4;
+        border: 1px solid #ddd;
+        margin-bottom: 5px;
+        padding: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .drag {
+        cursor: move;
+      }
+      .grab {
+        cursor: grab;
+      }
+      .property-item:hover {
+        background-color: #e4e4e4;
+      }
+      .drag-active {
+        opacity: 0.5;
+      }
+      .remove-btn,
+      .add-btn {
+        background: none;
+        border: none;
+        color: red;
+        cursor: pointer;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Huly JSON Export Normalizer</h1>
+
+    <p>
+      A quick tool developed to solve Huly (Huly.io) Issue export JSON that can
+      be converted to Excel for better processing.
+    </p>
+
+    <form id="jsonNormalizerForm">
+      <label for="jsonFile">Huly JSON file</label>
+      <input
+        type="file"
+        name="jsonFile"
+        id="jsonFile"
+        accept=".json"
+        required
+      />
+
+      <h3>Select and Order Properties</h3>
+
+      <div class="properties-container">
+        <div class="properties-list" id="availableProperties">
+          <h4>Available Properties</h4>
+          <!-- Properties will be dynamically added here -->
+        </div>
+
+        <div class="properties-list" id="selectedProperties">
+          <h4>Selected Properties (Drag to Reorder)</h4>
+          <button type="button" onclick="savePreset(this)">Save preset</button>
+
+          <!-- Selected properties will be added here -->
+        </div>
+      </div>
+
+      <button type="submit">Process JSON</button>
+    </form>
+
+    <script>
+      // List of initial properties
+      let initialProperties = [
+        "title",
+        "assignee",
+        "component",
+        "milestone",
+        "reportedTime",
+        "remainingTime",
+        "estimation",
+        "identifier",
+        "labels",
+        "status",
+        "priority",
+        "dueDate",
+        "comments",
+        "number",
+        "createdOn",
+        "createdBy",
+        "modifiedOn",
+        "modifiedBy",
+        "todos",
+        "collaborators",
+      ];
+
+      const availablePropertiesEl = document.getElementById(
+        "availableProperties"
+      );
+      const selectedPropertiesEl =
+        document.getElementById("selectedProperties");
+      const formEl = document.getElementById("jsonNormalizerForm");
+
+      document.addEventListener("DOMContentLoaded", (event) => {
+        loadPreset();
+        initializeProperties();
+      });
+
+      let draggedItem = null;
+
+      // Populate initial available properties
+      function initializeProperties() {
+        initialProperties.forEach((prop) => {
+          const propEl = createPropertyElement(prop, true);
+          availablePropertiesEl.appendChild(propEl);
+        });
+      }
+
+      function loadPreset() {
+        const selectedPropsString = localStorage.getItem("huly-export-preset");
+        if (!selectedPropsString) return;
+
+        const selectedProps = JSON.parse(selectedPropsString);
+        selectedProps.forEach((prop) => {
+          const propEl = createPropertyElement(prop, false);
+          selectedPropertiesEl.appendChild(propEl);
+        });
+
+        initialProperties = initialProperties.filter(
+          (item) => !selectedProps.includes(item)
+        );
+      }
+
+      function savePreset() {
+        const selectedProps = Array.from(
+          selectedPropertiesEl.querySelectorAll(".property-item")
+        ).map((el) => el.textContent.trim());
+
+        localStorage.setItem(
+          "huly-export-preset",
+          JSON.stringify(selectedProps)
+        );
+
+        alert("Done");
+        return false;
+      }
+
+      // Create property element
+      function createPropertyElement(prop, isAvailable = true) {
+        const propEl = document.createElement("div");
+        propEl.className = `property-item ${!isAvailable ? "drag" : "grab"}`;
+        propEl.draggable = !isAvailable;
+        propEl.textContent = prop;
+
+        propEl.addEventListener("click", () =>
+          moveProperty(propEl, isAvailable)
+        );
+
+        // Drag events
+        propEl.addEventListener("dragstart", (e) => {
+          draggedItem = propEl;
+          setTimeout(() => propEl.classList.add("drag-active"), 0);
+        });
+
+        propEl.addEventListener("dragend", () => {
+          propEl.classList.remove("drag-active");
+        });
+
+        propEl.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          const container = propEl.parentElement;
+          const afterElement = getDragAfterElement(container, e.clientY);
+          if (afterElement) {
+            container.insertBefore(draggedItem, afterElement);
+          } else {
+            container.appendChild(draggedItem);
+          }
+        });
+
+        return propEl;
+      }
+
+      // Move property between lists
+      function moveProperty(propEl, isAvailable) {
+        if (isAvailable) {
+          // Move to selected
+          availablePropertiesEl.removeChild(propEl);
+          const newPropEl = createPropertyElement(propEl.textContent, false);
+          selectedPropertiesEl.appendChild(newPropEl);
+        } else {
+          // Move to available
+          selectedPropertiesEl.removeChild(propEl);
+          const newPropEl = createPropertyElement(propEl.textContent, true);
+          availablePropertiesEl.appendChild(newPropEl);
+        }
+      }
+
+      // Find element to insert before during drag
+      function getDragAfterElement(container, y) {
+        const draggableElements = [
+          ...container.querySelectorAll(".property-item:not(.drag-active)"),
+        ];
+
+        return draggableElements.reduce(
+          (closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+              return { offset: offset, element: child };
+            } else {
+              return closest;
+            }
+          },
+          { offset: Number.NEGATIVE_INFINITY }
+        ).element;
+      }
+
+      function exportToExcel(data, filename = "exported_data.xlsx") {
+        // Create a new workbook
+        const workbook = XLSX.utils.book_new();
+
+        // Convert array to worksheet
+        const worksheet = XLSX.utils.json_to_sheet(data);
+
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+
+        // Generate and download Excel file
+        XLSX.writeFile(workbook, filename);
+      }
+
+      // Handle form submission
+      formEl.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const fileInput = document.getElementById("jsonFile");
+        const file = fileInput.files[0];
+        const selectedProps = Array.from(
+          selectedPropertiesEl.querySelectorAll(".property-item")
+        ).map((el) => el.textContent.trim());
+
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            try {
+              const jsonData = JSON.parse(event.target.result);
+              // Here you would process the JSON with selected properties
+
+              const exportedData = [];
+              for (const issue of jsonData) {
+                const data = {
+                  parent: issue.parents?.length == 0 ? "Yes" : "",
+                };
+
+                for (const propertyName of selectedProps) {
+                  if (propertyName != "collaborators") {
+                    data[propertyName] = issue[propertyName];
+                  } else {
+                    data[propertyName] =
+                      issue["notification:mixin:Collaborators"][
+                        "collaborators"
+                      ].join(" & ");
+                  }
+                }
+
+                exportedData.push(data);
+              }
+
+              // Add your JSON processing logic here
+              exportToExcel(exportedData, file.name + ".xlsx");
+            } catch (error) {
+              alert("Error processing JSON file: " + error.message);
+            }
+          };
+          reader.readAsText(file);
+        }
+      });
+    </script>
+  </body>
+</html>
