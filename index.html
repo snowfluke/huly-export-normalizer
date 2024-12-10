@@ -321,7 +321,16 @@
 
                 for (const propertyName of selectedProps) {
                   if (propertyName != "collaborators") {
-                    data[propertyName] = issue[propertyName];
+                    if (
+                      propertyName == "modifiedOn" ||
+                      propertyName == "createdOn"
+                    ) {
+                      data[propertyName] = new Date(
+                        issue[propertyName]
+                      ).toLocaleDateString();
+                    } else {
+                      data[propertyName] = issue[propertyName];
+                    }
                   } else {
                     data[propertyName] =
                       issue["notification:mixin:Collaborators"][
