@@ -311,38 +311,113 @@
           reader.onload = (event) => {
             try {
               const jsonData = JSON.parse(event.target.result);
-              // Here you would process the JSON with selected properties
 
+              // Sort issues if needed and prepare data container
+              const issues = jsonData.sort((a, b) => a.number - b.number);
               const exportedData = [];
-              for (const issue of jsonData) {
-                const data = {
-                  parent: issue.parents?.length == 0 ? "Yes" : "",
+
+              // Identify top-level issues (assuming issues with no parents are top-level)
+              const parents = issues.filter(
+                (issue) => !issue.parents || issue.parents.length === 0
+              );
+
+              /**
+               * Recursively processes an issue and all of its children.
+               *
+               * @param {Object} issue - The current issue to process.
+               * @param {string} hierarchy - A string representing the hierarchy/path.
+               * @param {number} depth - The depth level (or type) for the current issue.
+               * @param {Set} ancestry - A set of issue IDs in the current branch (to avoid cycles).
+               */
+              function processIssue(
+                issue,
+                hierarchy,
+                depth,
+                ancestry = new Set()
+              ) {
+                // If we have already seen this issue in the current branch, warn and stop to avoid infinite loops.
+                if (ancestry.has(issue._id)) {
+                  console.warn("Cycle detected for issue: " + issue._id);
+                  return;
+                }
+                // Clone the ancestry for the new branch and mark the current issue as visited.
+                const newAncestry = new Set(ancestry);
+                newAncestry.add(issue._id);
+
+                // Build the row object for the current issue.
+                const row = {
+                  type: depth,
+                  hierarchy: hierarchy,
                 };
 
-                for (const propertyName of selectedProps) {
-                  if (propertyName != "collaborators") {
+                selectedProps.forEach((propertyName) => {
+                  if (propertyName !== "collaborators") {
                     if (
-                      propertyName == "modifiedOn" ||
-                      propertyName == "createdOn"
+                      propertyName === "modifiedOn" ||
+                      propertyName === "createdOn"
                     ) {
-                      data[propertyName] = new Date(
-                        issue[propertyName]
-                      ).toLocaleDateString();
+                      row[propertyName] = issue[propertyName]
+                        ? new Date(issue[propertyName]).toLocaleDateString()
+                        : "";
                     } else {
-                      data[propertyName] = issue[propertyName];
+                      row[propertyName] = issue[propertyName] || "";
                     }
                   } else {
-                    data[propertyName] =
-                      issue["notification:mixin:Collaborators"][
-                        "collaborators"
-                      ].join(" & ");
+                    // Adjust the property lookup if necessary.
+                    row[propertyName] = issue[
+                      "notification:mixin:Collaborators"
+                    ]
+                      ? issue["notification:mixin:Collaborators"][
+                          "collaborators"
+                        ].join(" & ")
+                      : "";
                   }
-                }
+                });
 
-                exportedData.push(data);
+                exportedData.push(row);
+
+                // If the current issue has child info, process each child recursively.
+                if (issue.childInfo && issue.childInfo.length > 0) {
+                  issue.childInfo.forEach((childRef) => {
+                    // Find the child issue by its ID (adjust the property name if needed)
+                    const childIssue = issues.find(
+                      (el) => el._id == childRef.childId
+                    );
+                    if (childIssue) {
+                      // Build a new hierarchy string – here we append the child's identifiers (or its ID if not available)
+                      const childIdentifier =
+                        childIssue.identifier || childRef.childId;
+                      const newHierarchy = hierarchy + "/" + childIdentifier;
+                      processIssue(
+                        childIssue,
+                        newHierarchy,
+                        depth + 1,
+                        newAncestry
+                      );
+                    } else {
+                      // If the child issue is missing, create a dummy entry.
+                      const missingRow = {
+                        type: depth + 1,
+                        hierarchy: hierarchy + "/" + childRef.childId,
+                      };
+                      selectedProps.forEach((propertyName) => {
+                        missingRow[propertyName] = "";
+                      });
+                      exportedData.push(missingRow);
+                    }
+                  });
+                }
               }
 
-              // Add your JSON processing logic here
+              // Process each top-level parent issue.
+              parents.forEach((parentIssue) => {
+                // Start the hierarchy using the parent's identifiers (or parent's ID if identifiers is missing)
+                const parentHierarchy =
+                  parentIssue.identifier || parentIssue._id;
+                processIssue(parentIssue, parentHierarchy, 0);
+              });
+
+              // Now export the data to Excel.
               exportToExcel(exportedData, file.name + ".xlsx");
             } catch (error) {
               alert("Error processing JSON file: " + error.message);
